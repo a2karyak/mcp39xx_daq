@@ -37,7 +37,7 @@ int main()
 	SysTick->VAL = 0;
 	SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
 
-	clk_enable(GPIO_PORT_CLK_CFG(LED_PORT));
+	clk_enable(LED_PORT);
 	gpio_configure_out(LED_PORT, LED_PIN1, GPIO_OUT_PP, GPIO_OUT_SPEED_2MHz);
 
 	uint32_t clock = SysTick->VAL;
