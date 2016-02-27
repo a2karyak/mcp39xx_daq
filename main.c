@@ -11,6 +11,7 @@
 
 static const struct RCC_CLK_CONFIG clk_cfg =
 {
+	.clk_src = RCC_SYSCLK_SRC_CRYSTAL,
 #ifdef STM32F10X_MD // 72 MHz
 	.pll_mul = 9,
 	.pll_hse_div = RCC_PLL_HSE_DIV_1,
