@@ -36,7 +36,7 @@ MYLIB_SRC=startup.c clock.c assert.c
 MYLIB_OBJ=$(patsubst %.c, $(OBJDIR)/%.o, $(MYLIB_SRC))
 $(foreach d,$(MYLIB_SRC),$(eval $(call make-obj-c,$d,$(MYLIB))))
 
-MAIN_SRC=main.c mcp3914.c
+MAIN_SRC=main.c mcp3914.c input_mcp3914.c
 MAIN_OBJ=$(patsubst %.c, $(OBJDIR)/%.o, $(MAIN_SRC))
 $(foreach d,$(MAIN_SRC),$(eval $(call make-obj-c,$d,.)))
 

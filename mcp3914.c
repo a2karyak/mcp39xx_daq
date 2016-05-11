@@ -9,11 +9,19 @@ void mcp3914_port_configure(const struct MCP3914_PORT_CFG *port, enum GPIO_OUT_S
 	port->reset_pin.port->ODR |= 1 << port->reset_pin.pin; // RESET high
 	port->cs_pin.port->ODR |= 1 << port->cs_pin.pin; // CS high
 
-	gpio_configure_af(port->clk_pin.port, port->clk_pin.pin, GPIO_OUT_PP, pin_speed);
+	// TODO: clk_enable(AF);
+	clk_enable(port->reset_pin.port);
+	clk_enable(port->sck_pin.port);
+	clk_enable(port->mosi_pin.port);
+	clk_enable(port->miso_pin.port);
+	clk_enable(port->cs_pin.port);
+	clk_enable(port->dr_pin.port);
+
+	gpio_configure_out(port->reset_pin.port, port->reset_pin.pin, GPIO_OUT_PP, pin_speed);
+	gpio_configure_af(port->sck_pin.port, port->sck_pin.pin, GPIO_OUT_PP, pin_speed);
 	gpio_configure_af(port->mosi_pin.port, port->mosi_pin.pin, GPIO_OUT_PP, pin_speed);
 	gpio_configure_in(port->miso_pin.port, port->miso_pin.pin);
 	gpio_configure_out(port->cs_pin.port, port->cs_pin.pin, GPIO_OUT_PP, pin_speed);
-	gpio_configure_out(port->reset_pin.port, port->reset_pin.pin, GPIO_OUT_PP, pin_speed);
 	gpio_configure_in(port->dr_pin.port, port->dr_pin.pin);
 	gpio_configure_in_pull(port->dr_pin.port, port->dr_pin.pin, GPIO_PULLUP); // single device configuration, requires DR_HIZ setting TODO NOPULL ????
 
@@ -27,6 +35,7 @@ void mcp3914_port_init(const struct MCP3914_PORT_CFG *cfg, struct MCP3914_PORT *
 	port->channel_width = 3;
 	port->repeat = 8; // TODO
 
+	// reset MCP3914, may not be necessary
 	cfg->reset_pin.port->ODR &= ~(1 << cfg->reset_pin.pin); // RESET high
 	delay_us(1000);
 	cfg->reset_pin.port->ODR |= 1 << cfg->reset_pin.pin; // RESET high
