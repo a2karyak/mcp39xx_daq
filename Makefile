@@ -11,9 +11,9 @@ CPU_OPT=-mcpu=cortex-m3
 LD_SCRIPT=stm32-20-64.ld
 endif
 
-OPTIONS += -D_DEBUG #-DNDEBUG
+OPTIONS += -DNDEBUG #-DNDEBUG
 
-COMPILE_OPTS = -fdata-sections -ffunction-sections $(CPU_OPT) -mthumb -Wall -g -O0 -include stm32_include.h -D$(MCU) -D$(BOARD) $(OPTIONS)
+COMPILE_OPTS = -fdata-sections -ffunction-sections $(CPU_OPT) -mthumb -Wall -g -O3 -include stm32_include.h -D$(MCU) -D$(BOARD) $(OPTIONS)
 INCLUDE_DIRS = -I$(ARM_CMSIS) -I$(STM32_CMSIS) -I$(MYLIB)
 LIBRARY_DIRS = -L$(MYLIB) # needed to find the linker script
 
