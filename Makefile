@@ -13,7 +13,7 @@ endif
 
 OPTIONS += -D_DEBUG #-DNDEBUG
 
-COMPILE_OPTS = -fdata-sections -ffunction-sections $(CPU_OPT) -mthumb -Wall -g -O3 -include stm32_include.h -D$(MCU) -D$(BOARD) $(OPTIONS)
+COMPILE_OPTS = -fdata-sections -ffunction-sections $(CPU_OPT) -mthumb -Wall -g -O0 -include stm32_include.h -D$(MCU) -D$(BOARD) $(OPTIONS)
 INCLUDE_DIRS = -I$(ARM_CMSIS) -I$(STM32_CMSIS) -I$(MYLIB)
 LIBRARY_DIRS = -L$(MYLIB) # needed to find the linker script
 
@@ -36,7 +36,7 @@ MYLIB_SRC=startup.c clock.c assert.c
 MYLIB_OBJ=$(patsubst %.c, $(OBJDIR)/%.o, $(MYLIB_SRC))
 $(foreach d,$(MYLIB_SRC),$(eval $(call make-obj-c,$d,$(MYLIB))))
 
-MAIN_SRC=main.c
+MAIN_SRC=main.c mcp3914.c
 MAIN_OBJ=$(patsubst %.c, $(OBJDIR)/%.o, $(MAIN_SRC))
 $(foreach d,$(MAIN_SRC),$(eval $(call make-obj-c,$d,.)))
 
