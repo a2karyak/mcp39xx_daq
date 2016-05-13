@@ -1,3 +1,5 @@
+#ifdef INPUT_MCP3914
+
 #include <assert.h>
 #include "mcp3914.h"
 #include <spi.h>
@@ -334,3 +336,5 @@ int start_measurement(void)
 	}
 	return 1;
 }
+
+#endif

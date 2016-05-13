@@ -22,7 +22,8 @@ enum MCP3914_REG
 	MCP3914_REG_CONFIG1 = 14,
 	MCP3914_REG_OFFCAL_CH0 = 15, // every channel takes 2 register
 	MCP3914_REG_GAINCAL_CH0 = 16, // every channel takes 2 register
-	MCP3914_REG_SECURITY = 31
+	MCP3914_REG_SECURITY = 31,
+	MCP3914_REG_NUM = 32,
 };
 
 enum /* : uint32_t */ // TODO complete TODO separate file
