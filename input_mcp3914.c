@@ -15,8 +15,8 @@ static const struct MCP3914_PORT_CFG mcp_cfg[NUM_DEV] =
 		{ GPIOA, 6 }, // MISO
 		{ GPIOA, 4 }, // CS
 		{ GPIOA, 3 }, // DR
-		{ 1 * 4, DMA1_Channel2 }, // RX DMA
-		{ 2 * 4, DMA1_Channel3 }, // TX DMA
+		{ DMA1_Channel2, 1 * 4 }, // RX DMA
+		{ DMA1_Channel3, 2 * 4 }, // TX DMA
 	},
 	{
 		SPI2,
@@ -26,8 +26,8 @@ static const struct MCP3914_PORT_CFG mcp_cfg[NUM_DEV] =
 		{ GPIOB, 14 }, // MISO
 		{ GPIOA, 8 }, // CS
 		{ GPIOA, 9 }, // DR
-		{ 3 * 4, DMA1_Channel4 }, // RX DMA
-		{ 4 * 4, DMA1_Channel5 }, // TX DMA
+		{ DMA1_Channel4, 3 * 4 }, // RX DMA
+		{ DMA1_Channel5, 4 * 4 }, // TX DMA
 	},
 };
 
