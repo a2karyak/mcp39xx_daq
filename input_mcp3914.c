@@ -1,9 +1,10 @@
 #ifdef INPUT_MCP3914
 
 #include <assert.h>
-#include "mcp3914.h"
 #include <spi.h>
 #include <clk_enable.h>
+#include "mcp3914.h"
+#include "buffer.h"
 
 enum { NUM_DEV = 2 };
 
@@ -36,20 +37,31 @@ static const struct MCP3914_PORT_CFG mcp_cfg[NUM_DEV] =
 struct DAQ_CHANNEL
 {
 	const struct MCP3914_PORT_CFG *cfg;
-	uint32_t data_size;
-	uint32_t data_offset;
-	volatile uint8_t dma_setup;
-	volatile uint8_t sample[MCP3914_MAX_SAMPLE_SIZE];
+	unsigned channel_width;
+	unsigned repeat;
+	unsigned data_size;
+	unsigned data_offset;
+	volatile int8_t dma_setup;
 };
+
+uint8_t channel_no[2] = { 0, 1 };
 
 static struct DAQ_CHANNEL daq_channel[NUM_DEV];
 static volatile uint32_t active_mask;
 static volatile uint32_t complete_mask;
 static uint32_t full_size;
 static volatile int stopping;
+static uint8_t *new_record;
 static volatile uint8_t mcp_tx_buf = 0xff;
+static uint32_t start_sample = 0;
+static uint32_t dropped_buffers = 0;
+static uint64_t dropped_samples = 0;
 
-extern void new_sample(int value);
+static void update_statuscom(struct DAQ_CHANNEL *channel, uint32_t val)
+{
+	mcp_3914_parse_statuscom(val, &channel->channel_width, &channel->repeat);
+	channel->data_size = channel->channel_width * channel->repeat;
+}
 
 static void configure_dma_common(DMA_Channel_TypeDef *channel, uint32_t ccr, volatile uint16_t *paddr)
 {
@@ -131,6 +143,12 @@ static void setup_channel(struct DAQ_CHANNEL *channel, const struct MCP3914_PORT
 	NVIC->ICPR[irq >> 5] = (1 << (irq & 0x1f)); /* Clear pending interrupt */ // TODO: move
 }
 
+void stop_measurement(void)
+{
+	if (active_mask != 0)
+		stopping = 1;
+}
+
 /*
  * Reading data registers is allowed after tODR (25 ns). This is one period
  * of 40 MHz clock. Therefore, if the MCU clock is lower than 80 MHz, tODR
@@ -188,7 +206,7 @@ static void ext_interrupt(struct DAQ_CHANNEL *channel)
 			if (active_mask == 0)
 			{
 				stopping = 0;
-//				TODO: discard buffer
+				prod_discard();
 			}
 			EXTI->IMR &= ~line_mask;
 		}
@@ -199,20 +217,47 @@ static void ext_interrupt(struct DAQ_CHANNEL *channel)
 		{
 //			goto fin; TODO?!
 		}
-		if (complete_mask == 0)
-			new_sample(1);
 		complete_mask |= line_mask;
 		channel->dma_setup = 1;
 		cfg->spi_tx_dma.dma_channel->CNDTR = channel->data_size;
 		cfg->spi_rx_dma.dma_channel->CNDTR = channel->data_size;
 		cfg->spi_tx_dma.dma_channel->CCR |= DMA_CCR1_EN;
-		cfg->spi_rx_dma.dma_channel->CMAR = (uint32_t) channel->sample;
+		cfg->spi_rx_dma.dma_channel->CMAR = (uint32_t) new_record + channel->data_offset;
 		cfg->spi_rx_dma.dma_channel->CCR |= DMA_CCR1_EN;
 		cfg->spi->CR2 |= SPI_CR2_TXDMAEN;
 		if (complete_mask == active_mask)
 		{
-			new_sample(0);
-			// TODO: new sample
+			if (buf_tail_ptr == 0)
+			{
+				uint32_t next_completed_buffer = next_buffer(buf_tail_head);
+				if (next_completed_buffer != buf_tail_tail)
+				{
+					struct Buffer *b = &buffer[buf_tail_head];
+					b->hdr.num_bytes = BUF_DATA_SZ;
+					buf_tail_head = next_completed_buffer;
+				}
+			}
+			struct Buffer *new_buffer = &buffer[buf_tail_head];
+			buf_tail_ptr += full_size;
+			++new_buffer->hdr.num_samples;
+			if (buf_tail_ptr > BUF_DATA_SZ - full_size)
+			{
+				start_sample += new_buffer->hdr.num_samples;
+				if (buf_tail_tail == buf_head_head)
+				{
+					dropped_samples += new_buffer->hdr.num_samples;
+					dropped_buffers += 1;
+				}
+				else
+				{
+					new_buffer = &buffer[buf_tail_tail];
+					buf_tail_tail = next_buffer(buf_tail_tail);
+				}
+				new_buffer->hdr.start_sample = start_sample;
+				new_buffer->hdr.num_samples = 0;
+				buf_tail_ptr = 0;
+			}
+			new_record = new_buffer->data + buf_tail_ptr;
 			complete_mask = 0;
 		}
 	}
@@ -248,7 +293,9 @@ void input_setup(void)
 			config1 = (config1 & ~MCP3914_CONFIG1_CLK_MASK) | MCP3914_CONFIG1_CLK_INT;
 			mcp3914_write_reg(cfg, MCP3914_REG_CONFIG1, config1);
 
-			// TODO: move
+			uint32_t statuscom = mcp3914_read_reg(channel->cfg, MCP3914_REG_STATUSCOM);
+			update_statuscom(channel, statuscom);
+
 			uint32_t config0 = mcp3914_read_reg(channel->cfg, MCP3914_REG_CONFIG0);
 			config0 = (config0 & ~MCP3914_CONFIG0_PRE_MASK) | MCP3914_CONFIG0_PRE1;
 			config0 = (config0 & ~MCP3914_CONFIG0_OSC_MASK) | MCP3914_CONFIG0_OSC_64;
@@ -272,49 +319,11 @@ int start_measurement(void)
 			uint32_t security = mcp3914_read_reg(channel->cfg, MCP3914_REG_SECURITY);
 			if (security == 0xa50000)
 			{
-				unsigned channel_width = 0;
-				unsigned repeat = 0;
-				uint32_t statuscom = mcp3914_read_reg(channel->cfg, MCP3914_REG_STATUSCOM);
-				switch (statuscom & MCP3914_STATUSCOM_WIDTH_DATA_MASK)
-				{
-				case MCP3914_STATUSCOM_WIDTH_DATA_16:
-					channel_width = 2;
-					break;
-				case MCP3914_STATUSCOM_WIDTH_DATA_24:
-					channel_width = 3;
-					break;
-				case MCP3914_STATUSCOM_WIDTH_DATA_32S:
-				case MCP3914_STATUSCOM_WIDTH_DATA_32Z:
-					channel_width = 4;
-					break;
-				}
-				switch (statuscom & MCP3914_STATUSCOM_READ_MASK)
-				{
-				case MCP3914_STATUSCOM_READ_ONE:
-					repeat = 1;
-					break;
-				case MCP3914_STATUSCOM_READ_GROUP:
-					repeat = 2; // TODO: incorrect for all registers
-					break;
-				case MCP3914_STATUSCOM_READ_TYPES:
-					repeat = 8; // TODO: incorrect for all registers
-					break;
-				case MCP3914_STATUSCOM_READ_ALL:
-					repeat = 32;
-					break;
-				}
-				// TODO verify length of CHANNEL registers READ/NON_STREAM
-
-				channel->data_size = channel_width * repeat;
 				if (channel->data_size != 0)
 				{
-					int i;
-					for (i = 0; i != MCP3914_MAX_SAMPLE_SIZE; ++i)
-						channel->sample[i] = 0;
-
 					// TODO: DMA by words
 					channel->data_offset = sz;
-					mcp3914_stream_start(cfg, MCP3914_REG_CHANNEL_BASE /*+ channel[0]*/);
+					mcp3914_stream_start(cfg, MCP3914_REG_CHANNEL_BASE + channel_no[0]);
 					// TX DMA request is not enabled here to avoid FIFO error (DMA not ready)
 					cfg->spi->CR2 |= SPI_CR2_RXDMAEN;
 					channel->dma_setup = 0;
@@ -329,12 +338,40 @@ int start_measurement(void)
 			full_size = sz;
 			complete_mask = 0;
 			stopping = 0;
-			// TODO: setup first buffer
+			start_sample = 0;
+			buf_tail_tail = next_buffer(buf_tail_tail);
+			struct Buffer *b = &buffer[buf_tail_head];
+			b->hdr.start_sample = start_sample;
+			b->hdr.num_samples = 0;
+			buf_tail_ptr = 0;
+			new_record = b->data;
 			EXTI->IMR |= enabled_mask;
 			return 0;
 		}
 	}
 	return 1;
+}
+
+void input_write_register(unsigned reg, uint32_t val)
+{
+	unsigned port = reg / MCP3914_REG_NUM;
+	unsigned reg_number = reg % MCP3914_REG_NUM;
+	if (reg_number >= MCP3914_NUM_CHANNELS)
+	{
+		mcp3914_write_reg(&mcp_cfg[port], (enum MCP3914_REG) reg_number, val);
+		if (reg == MCP3914_REG_STATUSCOM)
+			update_statuscom(&daq_channel[port], val);
+	}
+}
+
+uint32_t input_read_register(unsigned reg)
+{
+	unsigned port = reg / MCP3914_REG_NUM;
+	unsigned reg_number = reg % MCP3914_REG_NUM;
+	if (reg_number < MCP3914_NUM_CHANNELS)
+		return mcp3914_read_channel(&mcp_cfg[port], reg_number, daq_channel[port].channel_width);
+	else
+		return mcp3914_read_reg(&mcp_cfg[port], (enum MCP3914_REG) reg_number);
 }
 
 #endif

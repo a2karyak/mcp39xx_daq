@@ -109,6 +109,7 @@ void mcp3914_deselect(const struct MCP3914_PORT_CFG *port)
 	port->cs_pin.port->BSRR = 1 << port->cs_pin.pin;
 }
 
+void mcp_3914_parse_statuscom(uint32_t statuscom, unsigned *channel_width, unsigned *repeat);
 void mcp3914_write_reg(const struct MCP3914_PORT_CFG *port, enum MCP3914_REG reg, uint32_t val);
 uint32_t mcp3914_read_reg(const struct MCP3914_PORT_CFG *port, enum MCP3914_REG reg);
 uint32_t mcp3914_read_channel(const struct MCP3914_PORT_CFG *port, unsigned channel, unsigned len);

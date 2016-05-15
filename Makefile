@@ -11,7 +11,7 @@ CPU_OPT=-mcpu=cortex-m3
 LD_SCRIPT=stm32-20-64.ld
 endif
 
-OPTIONS += -D_DEBUG -DINPUT_SIMULATION -DSERIAL_ENABLE #-DNDEBUG #-DINPUT_MCP3914
+OPTIONS += -D_DEBUG -DINPUT_MCP3914 -DSERIAL_ENABLE #-DNDEBUG
 
 COMPILE_OPTS = -fdata-sections -ffunction-sections $(CPU_OPT) -mthumb -Wall -Wno-parentheses -g -O0 -include stm32_include.h -D$(MCU) -D$(BOARD) $(OPTIONS)
 INCLUDE_DIRS = -I$(ARM_CMSIS) -I$(STM32_CMSIS) -I$(MYLIB)

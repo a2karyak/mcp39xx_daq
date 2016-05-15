@@ -52,6 +52,38 @@ static uint8_t WRITE_CMD(uint8_t address, uint8_t reg)
 	return (address << 6) | (reg << 1) | MCP3914_CMD_WRITE_MASK;
 }
 
+void mcp_3914_parse_statuscom(uint32_t statuscom, unsigned *channel_width, unsigned *repeat)
+{
+	switch (statuscom & MCP3914_STATUSCOM_WIDTH_DATA_MASK)
+	{
+	case MCP3914_STATUSCOM_WIDTH_DATA_16:
+		*channel_width = 2;
+		break;
+	case MCP3914_STATUSCOM_WIDTH_DATA_24:
+		*channel_width = 3;
+		break;
+	case MCP3914_STATUSCOM_WIDTH_DATA_32S:
+	case MCP3914_STATUSCOM_WIDTH_DATA_32Z:
+		*channel_width = 4;
+		break;
+	}
+	switch (statuscom & MCP3914_STATUSCOM_READ_MASK)
+	{
+	case MCP3914_STATUSCOM_READ_ONE:
+		*repeat = 1;
+		break;
+	case MCP3914_STATUSCOM_READ_GROUP:
+		*repeat = 2; // TODO: incorrect for all registers
+		break;
+	case MCP3914_STATUSCOM_READ_TYPES:
+		*repeat = 8; // TODO: incorrect for all registers
+		break;
+	case MCP3914_STATUSCOM_READ_ALL:
+		*repeat = 32;
+		break;
+	}
+}
+
 void mcp3914_write_reg(const struct MCP3914_PORT_CFG *cfg, enum MCP3914_REG reg, uint32_t val)
 {
 	mcp3914_select(cfg);
