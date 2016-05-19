@@ -12,23 +12,23 @@ static const struct MCP3914_PORT_CFG mcp_cfg[NUM_DEV] =
 {
 	{
 		SPI1,
-		{ GPIOB, 0 }, // RESET
-		{ GPIOA, 5 }, // SCK
-		{ GPIOA, 7 }, // MOSI
-		{ GPIOA, 6 }, // MISO
-		{ GPIOA, 4 }, // CS
-		{ GPIOA, 3 }, // DR
+		{ GPIOB, 0 }, // RESET GRN
+		{ GPIOA, 6 }, // MISO  YEL
+		{ GPIOA, 7 }, // MOSI  WHT
+		{ GPIOA, 5 }, // SCK   ORG
+		{ GPIOA, 4 }, // CS    GRN
+		{ GPIOA, 3 }, // DR    BLU
 		{ DMA1_Channel2, 1 * 4 }, // RX DMA
 		{ DMA1_Channel3, 2 * 4 }, // TX DMA
 	},
 	{
 		SPI2,
-		{ GPIOB, 12 }, // RESET
-		{ GPIOB, 13 }, // SCK
-		{ GPIOB, 15 }, // MOSI
-		{ GPIOB, 14 }, // MISO
-		{ GPIOA, 8 }, // CS
-		{ GPIOA, 9 }, // DR
+		{ GPIOB, 12 }, // RESET GRN
+		{ GPIOB, 14 }, // MISO  YEL
+		{ GPIOB, 15 }, // MOSI  WHT
+		{ GPIOB, 13 }, // SCK   ORG
+		{ GPIOA, 8  }, // CS    GRN
+		{ GPIOA, 9  }, // DR    BLU
 		{ DMA1_Channel4, 3 * 4 }, // RX DMA
 		{ DMA1_Channel5, 4 * 4 }, // TX DMA
 	},

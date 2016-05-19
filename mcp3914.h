@@ -84,10 +84,11 @@ enum MCP3914_STREAM
 struct MCP3914_PORT_CFG
 {
 	SPI_TypeDef *spi;
+	// order of pin definitions is as in the MCP connector
 	struct GPIO_PORT_PIN reset_pin;
-	struct GPIO_PORT_PIN sck_pin;
-	struct GPIO_PORT_PIN mosi_pin;
 	struct GPIO_PORT_PIN miso_pin;
+	struct GPIO_PORT_PIN mosi_pin;
+	struct GPIO_PORT_PIN sck_pin;
 	struct GPIO_PORT_PIN cs_pin;
 	struct GPIO_PORT_PIN dr_pin;
 	const struct DMA_TARGET spi_rx_dma;
