@@ -183,11 +183,10 @@ int main()
 	SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_ENABLE_Msk;
 
 	clk_enable(LED_PORT);
-	gpio_configure_out(LED_PORT, LED_PIN1, GPIO_OUT_PP, GPIO_OUT_SPEED_2MHz);
+	gpio_configure_out(LED_PORT, LED_PIN1, GPIO_OUT_PP, GPIO_OUT_SPEED_LOW);
 
 #ifdef SERIAL_ENABLE
 	clk_enable(GPIOA);
-	gpio_configure_out(GPIOA, 0, GPIO_OUT_PP, GPIO_OUT_SPEED_MEDIUM);
 	gpio_configure_af(GPIOA, 2, GPIO_OUT_PP, GPIO_OUT_SPEED_MEDIUM); // USART2 TX
 	gpio_configure_in(GPIOA, 3); // USART2 RX
 

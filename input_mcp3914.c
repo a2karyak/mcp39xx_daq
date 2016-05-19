@@ -298,7 +298,7 @@ void input_setup(void)
 
 			uint32_t config0 = mcp3914_read_reg(channel->cfg, MCP3914_REG_CONFIG0);
 			config0 = (config0 & ~MCP3914_CONFIG0_PRE_MASK) | MCP3914_CONFIG0_PRE1;
-			config0 = (config0 & ~MCP3914_CONFIG0_OSC_MASK) | MCP3914_CONFIG0_OSC_64;
+			config0 = (config0 & ~MCP3914_CONFIG0_OSC_MASK) | MCP3914_CONFIG0_OSC_4096;
 			mcp3914_write_reg(cfg, MCP3914_REG_CONFIG0, config0);
 		}
 	}
