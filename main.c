@@ -12,6 +12,9 @@
 #ifdef SERIAL_ENABLE
 #include <dma.h>
 #endif
+#ifdef USB_ENABLE
+#include <stm32_usb.h>
+#endif
 #include <board/board.h>
 
 static const struct RCC_CLK_CONFIG clk_cfg =
@@ -111,6 +114,125 @@ static void tx_xfer_start(const void *data, unsigned len)
 
 #endif
 
+#ifdef USB_ENABLE
+
+#include <usb.h>
+#include "usb_device.h"
+
+struct usb_device usb_dev;
+static int8_t rx_blocked;
+static unsigned tx_tail, tx_head, tx_avail;
+static const uint8_t *xfer_tail, *xfer_head, *xfer_end;
+
+static unsigned rx(struct usb_device *dev, uint8_t ep_num, struct usb_pipe *pipe, struct usb_buffer *buf, unsigned n_buf);
+static unsigned tx(struct usb_device *dev, uint8_t ep_num, struct usb_pipe *pipe, struct usb_buffer *buf, unsigned n_buf);
+
+static unsigned modulo_add(unsigned modulo, unsigned x, unsigned y)
+{
+	assert(y <= modulo);
+	x += y;
+	if (x >= modulo)
+		x -= modulo;
+	return x;
+}
+
+static void rx_start(struct usb_device *dev)
+{
+	struct usb_buffer rx_buf;
+	assert(g_rx_ptr + 64 <= USB_PM_RX_NUM_PKT * 64);
+	rx_buf.pm_offset = USB_PM_RX + g_rx_ptr;
+	rx_buf.len = 64;
+	usb_drv_recv(dev->driver, ENDPOINT_DATA_RX, 64, &rx_buf, 1);
+}
+
+void usb_connected(struct usb_device *dev)
+{
+	assert(USB_PM_RX + 64 <= USB_PM_MAX);
+	g_rx_ptr = 0;
+	rx_blocked = g_rx_ptr + 64 > USB_PM_RX_NUM_PKT * 64;
+	assert(!rx_blocked);
+	dev->ep[ENDPOINT_DATA_RX].rx.data_cb = rx;
+
+	if (!rx_blocked)
+		rx_start(dev);
+
+	tx_tail = tx_head = 0;
+	tx_avail = 2; /* TODO */
+	dev->ep[ENDPOINT_DATA_TX].tx.data_cb = tx;
+}
+
+static unsigned rx(struct usb_device *dev, uint8_t ep_num, struct usb_pipe *pipe, struct usb_buffer *buf, unsigned n_buf)
+{
+	assert(ep_num == ENDPOINT_DATA_RX);
+	assert(n_buf == 1);
+	assert(g_rx_ptr + buf[0].len <= RX_BUF_SZ);
+	usb_drv_copy_from_pm(dev->driver, ep_num, rx_buf + g_rx_ptr, buf[0]);
+	g_rx_ptr += buf[0].len;
+	rx_blocked = g_rx_ptr + 64 > RX_BUF_SZ;
+	buf[0].len = 64;
+	return rx_blocked ? 0 : 1;
+}
+
+static unsigned tx_progress(struct usb_buffer *buf, unsigned n_buf)
+{
+	unsigned i;
+	for (i = 0; i != n_buf && xfer_tail != xfer_end; ++i)
+	{
+		buf[i].pm_offset = USB_PM_TX + tx_tail * 64;
+		unsigned c = 64;
+		if (c > xfer_end - xfer_tail)
+			c = xfer_end - xfer_tail;
+		buf[i].len = c;
+		usb_drv_copy_to_pm(usb_dev.driver, ENDPOINT_DATA_TX, xfer_tail, buf[i]);
+		xfer_tail += c;
+		tx_tail = modulo_add(USB_PM_TX_NUM_PKT, tx_tail, 1);
+	}
+	return i;
+}
+
+static void tx_xfer_start(const void *data, unsigned len)
+{
+	assert(g_tx_unblocked);
+	xfer_tail = xfer_head = (const uint8_t *)data;
+	xfer_end = xfer_head + len;
+	struct usb_buffer buf[USB_PM_TX_NUM_PKT];
+	unsigned n_buf = tx_progress(buf, tx_avail);
+	unsigned posted = usb_drv_send(usb_dev.driver, ENDPOINT_DATA_TX, len, buf, n_buf);
+	assert(posted == n_buf);
+	tx_avail -= posted;
+}
+
+static unsigned tx(struct usb_device *dev, uint8_t ep_num, struct usb_pipe *pipe, struct usb_buffer *buf, unsigned n_buf)
+{
+	assert(ep_num == ENDPOINT_DATA_TX);
+	assert(n_buf != 0);
+	assert(n_buf <= USB_PM_TX_NUM_PKT);
+	unsigned posted = 0;
+	unsigned i;
+	for (i = 0; i != n_buf; ++i)
+	{
+		assert(buf[i].pm_offset == USB_PM_TX + tx_head * 64);
+		assert(xfer_head + buf[i].len <= xfer_end);
+		xfer_head += buf[i].len;
+		tx_head = modulo_add(USB_PM_TX_NUM_PKT, tx_head, 1);
+	}
+	if (xfer_head == xfer_end)
+	{
+		assert(tx_avail + n_buf == 2); // TODO: 2
+		g_tx_unblocked = 1;
+	}
+	else
+	{
+		// TODO: test with spare buffers, also need array of lengths
+		if (tx_avail == 0)
+			posted = tx_progress(buf, n_buf);
+	}
+	tx_avail += n_buf - posted;
+	return posted;
+}
+
+#endif
+
 __attribute__ ((section(".isr_vector_core")))
 const struct CoreInterruptVector g_pfnVectors_Core =
 {
@@ -199,6 +321,19 @@ int main()
 	channel_tx->CPAR = (uint32_t) &uart->DR;
 #endif
 
+#ifdef USB_ENABLE
+	clk_enable(GPIOA);
+
+	// set DP low to simulate disconnect
+	GPIOA->ODR &= ~(1 << 12);
+	gpio_configure_out(GPIOA, 12, GPIO_OUT_PP, GPIO_OUT_SPEED_10MHz);
+	delay_ms(50);
+	gpio_configure_in(GPIOA, 12);
+
+	clk_enable((void *)USB_BASE);
+	usb_dev.driver = usb_drv_init(&usb_dev);
+#endif
+
 	unsigned rx_cmd = 0, rx_scn = 0;
 	unsigned tx_len = 0, tx_unblocked = 1;
 
@@ -215,6 +350,10 @@ int main()
 	uint32_t led_time = 0;
 	while (1)
 	{
+#ifdef USB_ENABLE
+		usb_drv_poll(usb_dev.driver);
+#endif
+
 		START_CRITICAL_SECTION();
 		unsigned rx_ptr = g_rx_ptr;
 		END_CRITICAL_SECTION();
@@ -237,6 +376,13 @@ int main()
 				rx_scn -= rx_cmd;
 				g_rx_ptr = rx_ptr - rx_cmd;
 				rx_cmd = 0;
+#ifdef USB_ENABLE
+				if (rx_blocked && g_rx_ptr + 64 <= USB_PM_RX_NUM_PKT * 64)
+				{
+					rx_blocked = 0;
+					rx_start(&usb_dev);
+				}
+#endif
 			}
 			END_CRITICAL_SECTION();
 		}

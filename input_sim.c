@@ -7,10 +7,12 @@
 #include <clk_enable.h>
 #include "buffer.h"
 
+enum { NUM_DEV = 2 };
+
 uint8_t channel_no[2] = { 0, 1 };
 
 static volatile uint32_t active_mask;
-static uint32_t registers[MCP3914_REG_NUM];
+static uint32_t registers[NUM_DEV][MCP3914_REG_NUM];
 static TIM_TypeDef *t = TIM2;
 static uint32_t start_sample = 0;
 static uint32_t dropped_buffers = 0;
@@ -32,9 +34,9 @@ void timer_interrupt(void)
 		// simulate data collection
 		struct Buffer *b = &buffer[buf_tail_head];
 		unsigned i;
-		for (i = 0; i != MCP3914_NUM_CHANNELS; ++i)
+		for (i = 0; i != MCP3914_NUM_CHANNELS * NUM_DEV; ++i)
 		{
-			unsigned x = b->hdr.start_sample * MCP3914_NUM_CHANNELS + buf_tail_ptr / 3 + i;
+			unsigned x = b->hdr.start_sample * MCP3914_NUM_CHANNELS * NUM_DEV + buf_tail_ptr / 3 + i;
 			memcpy(b->data + buf_tail_ptr + i * 3, &x, 3);
 		}
 		// complete the buffer, if needed
@@ -49,9 +51,9 @@ void timer_interrupt(void)
 			}
 		}
 		struct Buffer *new_buffer = &buffer[buf_tail_head];
-		buf_tail_ptr += MCP3914_NUM_CHANNELS * 3;
+		buf_tail_ptr += MCP3914_NUM_CHANNELS * NUM_DEV * 3;
 		++new_buffer->hdr.num_samples;
-		if (buf_tail_ptr > BUF_DATA_SZ - MCP3914_MAX_SAMPLE_SIZE)
+		if (buf_tail_ptr > BUF_DATA_SZ - MCP3914_NUM_CHANNELS * NUM_DEV * 3)
 		{
 			new_sample(1);
 			start_sample += new_buffer->hdr.num_samples;
@@ -83,9 +85,10 @@ void input_setup(void)
 	t->DIER |= TIM_DIER_UIE;
 	t->CR1 |= TIM_CR1_CEN;
 
-	unsigned i;
-	for (i = 0; i != MCP3914_REG_NUM; ++i)
-		registers[i] = i;
+	unsigned i, j;
+	for (j = 0; j != NUM_DEV; ++j)
+		for (i = 0; i != MCP3914_REG_NUM; ++i)
+			registers[j][i] = j << 8 + i;
 }
 
 int start_measurement(void)
@@ -106,18 +109,20 @@ int start_measurement(void)
 
 void input_write_register(unsigned reg, uint32_t val)
 {
+	unsigned port = reg / MCP3914_REG_NUM;
 	unsigned reg_number = reg % MCP3914_REG_NUM;
 	if (reg_number >= MCP3914_NUM_CHANNELS)
-		registers[reg_number] = val;
+		registers[port][reg_number] = val;
 }
 
 uint32_t input_read_register(unsigned reg)
 {
+	unsigned port = reg / MCP3914_REG_NUM;
 	unsigned reg_number = reg % MCP3914_REG_NUM;
 	if (reg_number < MCP3914_NUM_CHANNELS)
 		return 0x5a5a;
 	else
-		return registers[reg_number];
+		return registers[port][reg_number];
 }
 
 #endif
