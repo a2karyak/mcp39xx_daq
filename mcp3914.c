@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stm32_platform.h>
 #include "mcp3914.h"
 
 #include <spi.h>

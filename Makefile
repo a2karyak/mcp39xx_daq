@@ -14,7 +14,7 @@ endif
 
 OPTIONS += -D_DEBUG -DINPUT_MCP3914 -DUSB_ENABLE #-DNDEBUG
 
-COMPILE_OPTS = -fdata-sections -ffunction-sections $(CPU_OPT) -mthumb -Wall -Wno-parentheses -g -O0 -include stm32_include.h -D$(MCU) -D$(BOARD) $(OPTIONS)
+COMPILE_OPTS = -fdata-sections -ffunction-sections $(CPU_OPT) -mthumb -Wall -Wno-parentheses -g -O3 -D$(MCU) -D$(BOARD) $(OPTIONS)
 INCLUDE_DIRS = -I$(ARM_CMSIS) -I$(STM32_CMSIS) -I$(MYLIB) -I$(USBLIB)
 LIBRARY_DIRS = -L$(MYLIB) # needed to find the linker script
 

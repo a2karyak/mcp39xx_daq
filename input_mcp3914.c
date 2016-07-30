@@ -1,6 +1,7 @@
 #ifdef INPUT_MCP3914
 
 #include <assert.h>
+#include <stm32_platform.h>
 #include <spi.h>
 #include <clk_enable.h>
 #include "mcp3914.h"

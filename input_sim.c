@@ -2,8 +2,8 @@
 
 #include <assert.h>
 #include <string.h> // memcpy
-#include "mcp3914.h"
 #include <stm32_platform.h>
+#include "mcp3914.h"
 #include <clk_enable.h>
 #include <systick.h>
 #include "buffer.h"
