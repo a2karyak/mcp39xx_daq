@@ -58,6 +58,16 @@ static unsigned g_rx_ptr = 0;
 static unsigned g_tx_unblocked = 0;
 static unsigned tx_buffers = 0; // updated from a command
 
+enum MAIN_STAT_TYPE
+{
+	MAIN_STAT_WORK_TIME,
+	MAIN_STAT_COMM_TIME,
+	_MAIN_STAT_COUNT
+};
+
+static unsigned long main_stat_clk[_MAIN_STAT_COUNT];
+static unsigned main_stat_cnt[_MAIN_STAT_COUNT];
+
 static unsigned scan_input(unsigned p, unsigned end)
 {
 	assert(p <= end);
@@ -83,6 +93,7 @@ static DMA_Channel_TypeDef *const channel_tx = DMA1_Channel7; // USART2 TX
 
 static void usart_irq(void)
 {
+	uint32_t t0 = SysTick->VAL;
 	if (uart->SR & USART_SR_RXNE)
 	{
 		unsigned p = g_rx_ptr; // TODO: barrier?
@@ -100,6 +111,7 @@ static void usart_irq(void)
 		uart->CR1 &= ~USART_CR1_TCIE;
 		g_tx_unblocked = 1;
 	}
+	main_stat_clk[MAIN_STAT_COMM_TIME] += systick_time_interval(&t0);
 }
 
 static void tx_xfer_start(const void *data, unsigned len)
@@ -163,6 +175,7 @@ void usb_connected(struct usb_device *dev)
 
 static unsigned rx(struct usb_device *dev, uint8_t ep_num, struct usb_pipe *pipe, struct usb_buffer *buf, unsigned n_buf)
 {
+	uint32_t t0 = SysTick->VAL;
 	assert(ep_num == ENDPOINT_DATA_RX);
 	assert(n_buf == 1);
 	assert(g_rx_ptr + buf[0].len <= RX_BUF_SZ);
@@ -170,6 +183,7 @@ static unsigned rx(struct usb_device *dev, uint8_t ep_num, struct usb_pipe *pipe
 	g_rx_ptr += buf[0].len;
 	rx_blocked = g_rx_ptr + 64 > RX_BUF_SZ;
 	buf[0].len = 64;
+	main_stat_clk[MAIN_STAT_COMM_TIME] += systick_time_interval(&t0);
 	return rx_blocked ? 0 : 1;
 }
 
@@ -204,6 +218,7 @@ static void tx_xfer_start(const void *data, unsigned len)
 
 static unsigned tx(struct usb_device *dev, uint8_t ep_num, struct usb_pipe *pipe, struct usb_buffer *buf, unsigned n_buf)
 {
+	uint32_t t0 = SysTick->VAL;
 	assert(ep_num == ENDPOINT_DATA_TX);
 	assert(n_buf != 0);
 	assert(n_buf <= USB_PM_TX_NUM_PKT);
@@ -228,6 +243,7 @@ static unsigned tx(struct usb_device *dev, uint8_t ep_num, struct usb_pipe *pipe
 			posted = tx_progress(buf, n_buf);
 	}
 	tx_avail += n_buf - posted;
+	main_stat_clk[MAIN_STAT_COMM_TIME] += systick_time_interval(&t0);
 	return posted;
 }
 
@@ -256,16 +272,46 @@ const struct ExtInterruptVector g_pfnVectors_Ext =
 
 void write_reg(unsigned reg, uint32_t val)
 {
-	if (reg < 2000)
+	if (reg < 1000)
 		input_write_register(reg, val);
 }
 
+#ifdef INPUT_SIMULATION
+extern unsigned long g_stat_irq_clk;
+extern unsigned g_stat_irq_cnt;
+#endif
+
 uint32_t read_reg(unsigned reg)
 {
-	if (reg < 2000)
+	if (reg < 1000)
 		return input_read_register(reg);
-	else
-		return 0;
+
+	reg -= 1000;
+
+#ifdef USB_ENABLE
+	if (reg < (_MAIN_STAT_COUNT + _USB_STAT_COUNT) * 2)
+	{
+		unsigned kind = reg / (_MAIN_STAT_COUNT + _USB_STAT_COUNT);
+		unsigned r = reg % (_MAIN_STAT_COUNT + _USB_STAT_COUNT);
+		switch (kind)
+		{
+		case 0: return (r < _USB_STAT_COUNT) ? usb_stat_cnt[r] : main_stat_cnt[r - _USB_STAT_COUNT];
+		case 1: return (r < _USB_STAT_COUNT) ? usb_stat_clk[r] : main_stat_clk[r - _USB_STAT_COUNT];
+		}
+	}
+#endif
+
+	reg -= 1000;
+
+#ifdef INPUT_SIMULATION
+	switch (reg)
+	{
+	case 0: return g_stat_irq_clk;
+	case 1: return g_stat_irq_cnt;
+	}
+#endif
+
+	return 0;
 }
 
 void new_sample(int value)
@@ -354,37 +400,42 @@ int main()
 		usb_drv_poll(usb_dev.driver);
 #endif
 
-		START_CRITICAL_SECTION();
-		unsigned rx_ptr = g_rx_ptr;
-		END_CRITICAL_SECTION();
-
-		rx_scn = scan_input(rx_scn, rx_ptr);
-
 		if (tx_unblocked // New transfer cannot be started because the same buffer is used for DMA.
-				&& tx_len == 0
-				&& rx_scn != rx_ptr)
+				&& tx_len == 0)
 		{
-			tx_len = run_command(rx_buf + rx_cmd, rx_scn - rx_cmd, tx_buf);
-			rx_cmd = ++rx_scn;
-
 			START_CRITICAL_SECTION();
-			rx_ptr = g_rx_ptr;
-			rx_scn = scan_input(rx_scn, rx_ptr);
-			if (rx_scn == rx_ptr)
-			{
-				memmove(rx_buf, rx_buf + rx_cmd, rx_ptr - rx_cmd);
-				rx_scn -= rx_cmd;
-				g_rx_ptr = rx_ptr - rx_cmd;
-				rx_cmd = 0;
-#ifdef USB_ENABLE
-				if (rx_blocked && g_rx_ptr + 64 <= USB_PM_RX_NUM_PKT * 64)
-				{
-					rx_blocked = 0;
-					rx_start(&usb_dev);
-				}
-#endif
-			}
+			unsigned rx_ptr = g_rx_ptr;
 			END_CRITICAL_SECTION();
+
+			rx_scn = scan_input(rx_scn, rx_ptr);
+
+			if (rx_scn != rx_ptr)
+			{
+				uint32_t t0 = SysTick->VAL;
+				tx_len = run_command(rx_buf + rx_cmd, rx_scn - rx_cmd, tx_buf);
+				rx_cmd = ++rx_scn;
+
+				START_CRITICAL_SECTION();
+				rx_ptr = g_rx_ptr;
+				rx_scn = scan_input(rx_scn, rx_ptr);
+				if (rx_scn == rx_ptr)
+				{
+					memmove(rx_buf, rx_buf + rx_cmd, rx_ptr - rx_cmd);
+					rx_scn -= rx_cmd;
+					g_rx_ptr = rx_ptr - rx_cmd;
+					rx_cmd = 0;
+#ifdef USB_ENABLE
+					if (rx_blocked && g_rx_ptr + 64 <= USB_PM_RX_NUM_PKT * 64)
+					{
+						rx_blocked = 0;
+						rx_start(&usb_dev);
+					}
+#endif
+				}
+				END_CRITICAL_SECTION();
+				main_stat_cnt[MAIN_STAT_WORK_TIME]++;
+				main_stat_clk[MAIN_STAT_WORK_TIME] += systick_time_interval(&t0);
+			}
 		}
 
 		if (!tx_unblocked)
@@ -408,14 +459,18 @@ int main()
 		{
 			if (tx_len != 0)
 			{
+				uint32_t t0 = SysTick->VAL;
 				tx_xfer_start(tx_buf, tx_len);
 				g_tx_unblocked = tx_unblocked = 0;
+				main_stat_clk[MAIN_STAT_COMM_TIME] += systick_time_interval(&t0);
 			}
 			else
 			if (tx_buffers != 0 && cons_buffer_available())
 			{
+				uint32_t t0 = SysTick->VAL;
 				tx_xfer_start(cons_get_buffer(), BUF_SZ);
 				g_tx_unblocked = tx_unblocked = 0;
+				main_stat_clk[MAIN_STAT_COMM_TIME] += systick_time_interval(&t0);
 			}
 		}
 

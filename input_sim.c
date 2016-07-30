@@ -5,6 +5,7 @@
 #include "mcp3914.h"
 #include <stm32_platform.h>
 #include <clk_enable.h>
+#include <systick.h>
 #include "buffer.h"
 
 enum { NUM_DEV = 2 };
@@ -18,6 +19,9 @@ static uint32_t start_sample = 0;
 static uint32_t dropped_buffers = 0;
 static uint64_t dropped_samples = 0;
 
+unsigned long g_stat_irq_clk = 0;
+unsigned g_stat_irq_cnt = 0;
+
 extern void enable_interrupt(unsigned irq);
 extern void new_sample(int value);
 
@@ -29,8 +33,11 @@ void stop_measurement(void)
 
 void timer_interrupt(void)
 {
-	if (active_mask)
+	if (active_mask) // TODO: disable interrupt when not active
 	{
+		uint32_t t0 = SysTick->VAL;
+		g_stat_irq_cnt++;
+
 		// simulate data collection
 		struct Buffer *b = &buffer[buf_tail_head];
 		unsigned i;
@@ -72,6 +79,7 @@ void timer_interrupt(void)
 			buf_tail_ptr = 0;
 			new_sample(1);
 		}
+		g_stat_irq_clk += systick_time_interval(&t0);
 	}
 	t->SR = ~TIM_SR_UIF;
 }
@@ -81,7 +89,7 @@ void input_setup(void)
 	enable_interrupt(TIM2_IRQn);
 	clk_enable(t);
 	t->PSC = 72 - 1;
-	t->ARR = 1000 * 4096 / 2500 - 1;
+	t->ARR = 1000 * 64 / 2500 - 1; // TODO: set rate from register
 	t->DIER |= TIM_DIER_UIE;
 	t->CR1 |= TIM_CR1_CEN;
 
