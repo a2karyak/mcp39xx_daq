@@ -131,7 +131,7 @@ static void tx_xfer_start(const void *data, unsigned len)
 #include <usb.h>
 #include "usb_device.h"
 
-struct usb_device usb_dev;
+static struct usb_device usb_dev;
 static int8_t rx_blocked;
 static unsigned tx_tail, tx_head, tx_avail;
 static const uint8_t *xfer_tail, *xfer_head, *xfer_end;
@@ -204,6 +204,7 @@ static unsigned tx_progress(struct usb_buffer *buf, unsigned n_buf)
 	return i;
 }
 
+// TODO: it may be possible to pipeline transfers in F103
 static void tx_xfer_start(const void *data, unsigned len)
 {
 	assert(g_tx_unblocked);
@@ -289,7 +290,7 @@ uint32_t read_reg(unsigned reg)
 	reg -= 1000;
 
 #ifdef USB_ENABLE
-	if (reg < (_MAIN_STAT_COUNT + _USB_STAT_COUNT) * 2)
+	if (reg < 1000)
 	{
 		unsigned kind = reg / (_MAIN_STAT_COUNT + _USB_STAT_COUNT);
 		unsigned r = reg % (_MAIN_STAT_COUNT + _USB_STAT_COUNT);
@@ -298,6 +299,7 @@ uint32_t read_reg(unsigned reg)
 		case 0: return (r < _USB_STAT_COUNT) ? usb_stat_cnt[r] : main_stat_cnt[r - _USB_STAT_COUNT];
 		case 1: return (r < _USB_STAT_COUNT) ? usb_stat_clk[r] : main_stat_clk[r - _USB_STAT_COUNT];
 		}
+		return 0;
 	}
 #endif
 
