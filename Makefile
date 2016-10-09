@@ -12,7 +12,7 @@ CPU_OPT=-mcpu=cortex-m3
 LD_SCRIPT=stm32-20-64.ld
 endif
 
-OPTIONS += -D_DEBUG -DINPUT_MCP3914 -DUSB_ENABLE #-DNDEBUG
+OPTIONS += -DINPUT_MCP3914 -DUSB_ENABLE #-DNDEBUG -D_DEBUG 
 
 COMPILE_OPTS = -fdata-sections -ffunction-sections $(CPU_OPT) -mthumb -Wall -Wno-parentheses -g -O3 -D$(MCU) -D$(BOARD) $(OPTIONS)
 INCLUDE_DIRS = -I$(ARM_CMSIS) -I$(STM32_CMSIS) -I$(MYLIB) -I$(USBLIB)
