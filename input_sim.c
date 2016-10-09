@@ -12,7 +12,6 @@ enum { NUM_DEV = 2 };
 
 uint8_t channel_no[2] = { 0, 1 };
 
-static volatile uint32_t active_mask;
 static uint32_t registers[NUM_DEV][MCP3914_REG_NUM];
 static TIM_TypeDef *t = TIM2;
 static uint32_t start_sample = 0;
@@ -27,81 +26,85 @@ extern void new_sample(int value);
 
 void stop_measurement(void)
 {
-	active_mask = 0;
-	prod_discard();
+	if (t->CR1 & TIM_CR1_CEN)
+	{
+		t->CR1 &= ~TIM_CR1_CEN;
+		prod_discard();
+	}
 }
 
 void timer_interrupt(void)
 {
-	if (active_mask) // TODO: disable interrupt when not active
+	if ((t->CR1 & TIM_CR1_CEN) == 0)
 	{
-		uint32_t t0 = SysTick->VAL;
-		g_stat_irq_cnt++;
+		t->SR = ~TIM_SR_UIF;
+		return;
+	}
 
-		// simulate data collection
-		struct Buffer *b = &buffer[buf_tail_head];
-		unsigned i;
-		for (i = 0; i != MCP3914_NUM_CHANNELS * NUM_DEV; ++i)
+	uint32_t t0 = SysTick->VAL;
+	g_stat_irq_cnt++;
+
+	// simulate data collection
+	struct Buffer *b = &buffer[buf_tail_head];
+	unsigned i;
+	for (i = 0; i != MCP3914_NUM_CHANNELS * NUM_DEV; ++i)
+	{
+		unsigned x = b->hdr.start_sample * MCP3914_NUM_CHANNELS * NUM_DEV + buf_tail_ptr / 3 + i;
+		memcpy(b->data + buf_tail_ptr + i * 3, &x, 3);
+	}
+	// complete the buffer, if needed
+	if (buf_tail_ptr == 0)
+	{
+		uint32_t next_completed_buffer = next_buffer(buf_tail_head);
+		if (next_completed_buffer != buf_tail_tail)
 		{
-			unsigned x = b->hdr.start_sample * MCP3914_NUM_CHANNELS * NUM_DEV + buf_tail_ptr / 3 + i;
-			memcpy(b->data + buf_tail_ptr + i * 3, &x, 3);
+			struct Buffer *b = &buffer[buf_tail_head];
+			b->hdr.num_bytes = BUF_DATA_SZ;
+			buf_tail_head = next_completed_buffer;
 		}
-		// complete the buffer, if needed
-		if (buf_tail_ptr == 0)
+	}
+	struct Buffer *new_buffer = &buffer[buf_tail_head];
+	buf_tail_ptr += MCP3914_NUM_CHANNELS * NUM_DEV * 3;
+	++new_buffer->hdr.num_samples;
+	if (buf_tail_ptr > BUF_DATA_SZ - MCP3914_NUM_CHANNELS * NUM_DEV * 3)
+	{
+		new_sample(1);
+		start_sample += new_buffer->hdr.num_samples;
+		if (buf_tail_tail == buf_head_head)
 		{
-			uint32_t next_completed_buffer = next_buffer(buf_tail_head);
-			if (next_completed_buffer != buf_tail_tail)
-			{
-				struct Buffer *b = &buffer[buf_tail_head];
-				b->hdr.num_bytes = BUF_DATA_SZ;
-				buf_tail_head = next_completed_buffer;
-			}
+			dropped_samples += new_buffer->hdr.num_samples;
+			dropped_buffers += 1;
 		}
-		struct Buffer *new_buffer = &buffer[buf_tail_head];
-		buf_tail_ptr += MCP3914_NUM_CHANNELS * NUM_DEV * 3;
-		++new_buffer->hdr.num_samples;
-		if (buf_tail_ptr > BUF_DATA_SZ - MCP3914_NUM_CHANNELS * NUM_DEV * 3)
+		else
 		{
-			new_sample(1);
-			start_sample += new_buffer->hdr.num_samples;
-			if (buf_tail_tail == buf_head_head)
-			{
-				dropped_samples += new_buffer->hdr.num_samples;
-				dropped_buffers += 1;
-			}
-			else
-			{
-				new_buffer = &buffer[buf_tail_tail];
-				buf_tail_tail = next_buffer(buf_tail_tail);
-			}
-			new_buffer->hdr.start_sample = start_sample;
-			new_buffer->hdr.num_samples = 0;
-			buf_tail_ptr = 0;
-			new_sample(1);
+			new_buffer = &buffer[buf_tail_tail];
+			buf_tail_tail = next_buffer(buf_tail_tail);
 		}
-		g_stat_irq_clk += systick_time_interval(&t0);
+		new_buffer->hdr.start_sample = start_sample;
+		new_buffer->hdr.num_samples = 0;
+		buf_tail_ptr = 0;
+		new_sample(1);
 	}
 	t->SR = ~TIM_SR_UIF;
+	g_stat_irq_clk += systick_time_interval(&t0);
 }
 
 void input_setup(void)
 {
-	enable_interrupt(TIM2_IRQn);
-	clk_enable(t);
-	t->PSC = 72 - 1;
-	t->ARR = 1000 * 64 / 2500 - 1; // TODO: set rate from register
-	t->DIER |= TIM_DIER_UIE;
-	t->CR1 |= TIM_CR1_CEN;
-
 	unsigned i, j;
 	for (j = 0; j != NUM_DEV; ++j)
 		for (i = 0; i != MCP3914_REG_NUM; ++i)
 			registers[j][i] = j << 8 + i;
+
+	enable_interrupt(TIM2_IRQn);
+	clk_enable(t);
+	t->PSC = 9 - 1;
+	t->DIER |= TIM_DIER_UIE;
 }
 
 int start_measurement(void)
 {
-	if (active_mask == 0)
+	if ((t->CR1 & TIM_CR1_CEN) == 0)
 	{
 		start_sample = 0;
 		buf_tail_tail = next_buffer(buf_tail_tail);
@@ -109,7 +112,10 @@ int start_measurement(void)
 		b->hdr.start_sample = start_sample;
 		b->hdr.num_samples = 0;
 		buf_tail_ptr = 0;
-		active_mask = 1;
+
+		unsigned osc = (registers[0][MCP3914_REG_CONFIG0] >> 13) & 7;
+		t->ARR = ((8000 << (osc + 5)) + 2500 / 2) / 2500 - 1;
+		t->CR1 |= TIM_CR1_CEN;
 		return 0;
 	}
 	return 1;
