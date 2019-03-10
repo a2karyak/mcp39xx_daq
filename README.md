@@ -70,10 +70,12 @@ The full set of commands is not implemented, and error checking is missing.
 
 Each data packet is a 1024-byte data structure with a 8 byte header (all fields are little endian):
 
+|Data Type|Name|Comment|
+|---------|----|-------|
 |u4|start_sample|Number of first sample in the packet. Used to detect lost packets.|
 |u2|num_samples|Number of samples in this packet.|
 |u2|num_bytes|Total length of sample data in this packet, in bytes.|
-|u1|data[124 - 8]|Sample data. There may be padding in the end of packet if the total size of sample data is less than 1024 - 8 bytes.|
+|u1|data[1024 - 8]|Sample data. There may be padding in the end of packet if the total size of sample data is less than 1024 - 8 bytes.|
 
 The size (16, 24, 32 bits) and number of channels in each sample is determined by the content of the STATUSCOM register. The firmware tracks writes to the STATUSCOM register and adjusts the data format accordingly.
 
