@@ -2,7 +2,7 @@ ARM_CMSIS=$(HOME)/arm-cmsis
 STM32_CMSIS=$(HOME)/stm32-cmsis
 MYLIB=$(HOME)/stm32-lib
 USBLIB=$(HOME)/stm32-usb-lib
-TOOLCHAIN=$(HOME)/gcc-arm-none-eabi-4_9-2015q3/bin
+TOOLCHAIN=$(HOME)/gcc-arm-none-eabi-5_4-2016q3/bin
 
 MCU=STM32F10X_MD
 BOARD=STM32F103_BLUEPILL
